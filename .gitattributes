@@ -1,2 +1,11 @@
 markdown/** linguist-generated=true
 llm_index/** linguist-generated=true
+* text=auto
+
+*.md text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+*.ps1 text eol=crlf

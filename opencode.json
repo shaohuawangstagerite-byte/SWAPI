@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "solidworks-api-kb": {
+      "path": "D:\\AI-Docs\\SWAPI",
+      "description": "Local searchable SOLIDWORKS API 2024 Markdown knowledge base and LLM index. Use for every SolidWorks.Interop or COM API implementation decision."
+    }
+  },
+  "permission": {
+    "skill": {
+      "developing-solidworks": "allow"
+    }
+  }
+}
