@@ -5,248 +5,494 @@ description: Develop, modify, debug, run, and verify C# automation for SOLIDWORK
 
 # Develop SOLIDWORKS 2024 C# Automation
 
-Turn the user's engineering intent into a verified SOLIDWORKS artifact. Treat the artifact and its frozen acceptance contract as the objective. Treat SWAPI documentation as evidence needed to make the next action legal, never as the deliverable.
+Turn the user's engineering intent into a verified SOLIDWORKS artifact.
 
-## Required environment
+The objective is the user's requested artifact and its acceptance conditions.
 
-- Run on Windows with a licensed SOLIDWORKS 2024 installation.
-- Use the SOLIDWORKS 2024 Interop assemblies installed on the machine.
-- Resolve the OpenCode reference named `solidworks-api-kb` before writing COM code.
-- Expect the reference to contain `llm_index/`, `markdown/`, and `AGENTS.md` from SWAPI.
-- If the knowledge base is unavailable, stop with `SOLIDWORKS_API_KB_NOT_FOUND`. Do not substitute model memory for missing API contracts.
+The local SWAPI knowledge base is evidence for making correct API decisions. Documentation lookup is not itself progress.
 
-## Core invariants
+## Environment
 
-Maintain these invariants throughout the task:
+Expected runtime environment:
 
-1. **Goal conservation**: change the implementation path, never the user's goal or frozen pass conditions.
-2. **Legal mutation**: use documented SOLIDWORKS 2024 API contracts and modify only authorized artifacts and document state.
-3. **Evidence-based progress**: count progress only when a real run proves a new acceptance check without breaking previously passed checks.
-4. **Valid termination**: report success only when every acceptance check passes; report blocked only with an observable blocker and no useful legal action remaining.
+- Windows
+- licensed SOLIDWORKS 2024
+- SOLIDWORKS 2024 Interop assemblies
+- C# / .NET project
+- this workspace contains the local SWAPI knowledge base
 
-Documentation read, code written, and successful compilation are not completion evidence by themselves.
+The knowledge base is already bundled locally.
 
-## Required workflow
+Expected repository content:
+
+```text
+<workspace>/
+├── llm_index/
+│   ├── symbols.tsv
+│   ├── documents.tsv
+│   ├── interface_members.jsonl
+│   └── ...
+├── markdown/
+│   └── ...
+├── AGENTS.md
+└── .opencode/
+    └── skills/
+        └── developing-solidworks/
+            └── SKILL.md
+```
+
+Do not:
+
+- resolve an external `solidworks-api-kb` reference;
+- depend on machine-specific absolute paths;
+- search other drives for the knowledge base;
+- substitute model memory for an API contract when local documentation is available.
+
+Resolve `KB_ROOT` once from the current workspace.
+
+Prefer the workspace root when it contains both:
+
+```text
+llm_index/
+markdown/
+```
+
+If necessary, locate a workspace-visible directory containing both folders.
+
+Do not search outside the current workspace.
+
+If they cannot be found, stop with:
+
+```text
+SOLIDWORKS_API_KB_NOT_FOUND
+```
+
+and report the expected relative directories.
+
+# Core invariants
+
+Maintain four invariants.
+
+## 1. Goal conservation
+
+The implementation path may change.
+
+The user's requested outcome and frozen acceptance conditions may not.
+
+## 2. Legal mutation
+
+Modify only authorized files, documents, features, configurations, and application state.
+
+Use documented SOLIDWORKS 2024 API contracts for COM operations.
+
+## 3. Evidence-based progress
+
+Progress means:
+
+```text
+a previously pending acceptance condition
+becomes proven by observable evidence
+without breaking previously passed conditions
+```
+
+Reading documentation, writing code, or compiling successfully does not by itself count as completion.
+
+## 4. Valid termination
+
+Return `SUCCESS` only when all required acceptance conditions have passed.
+
+Return `BLOCKED` only when an observable blocker prevents further useful legal action.
+
+# Rollout loop
 
 Use this loop:
 
 ```text
 SCOPE
--> DEFINE_AND_FREEZE_ACCEPTANCE
--> choose one pending acceptance check
--> obtain minimum API evidence for its next action
--> IMPLEMENT
--> RUN_SOLIDWORKS
--> ASSERT
--> next failed or pending check
--> DONE | BLOCKED
+  ↓
+FREEZE ACCEPTANCE
+  ↓
+SELECT ONE PENDING CHECK
+  ↓
+GET MINIMUM API EVIDENCE
+  ↓
+IMPLEMENT MINIMUM CHANGE
+  ↓
+RUN
+  ↓
+ASSERT
+  ↓
+PASS ─────→ next pending check
+  │
+  └ FAIL ─→ diagnose from observed evidence
+                ↓
+             retry
+                ↓
+         SUCCESS | BLOCKED
 ```
 
-Do not return a research-only or plan-only response when the user requested an artifact and the environment is actionable.
+Do not stop at a plan when the requested task is executable.
 
-## 1. Scope the transformation
+# 1. Scope the task
 
-Identify:
+Before implementation, identify only what is necessary to execute the task:
 
-- the requested final artifact or document state;
-- input documents, templates, dimensions, units, and configurations;
-- files and document state that may be modified;
-- files and document state that must remain unchanged;
-- required output paths and formats;
-- assumptions needed to make the request executable.
+- requested final artifact or document state;
+- input documents and values;
+- required output;
+- units and document types;
+- state that may change;
+- state that must remain unchanged;
+- assumptions required to execute.
 
-Ask the user only when a missing choice would materially change the artifact. Otherwise record a reasonable assumption and proceed.
+Prefer a reasonable explicit assumption when it does not materially alter the requested artifact.
 
-## 2. Define and freeze the acceptance contract
+Do not create unnecessary architecture before the transformation is understood.
 
-Before API research or implementation, translate the request into a structured contract:
+# 2. Freeze the acceptance contract
+
+Translate the request into falsifiable checks before implementation.
+
+Use:
 
 ```yaml
 ACCEPTANCE_CONTRACT:
   goal: <observable final result>
-  inputs:
-    - <input document or value>
+
   protected:
-    - <file, configuration, feature, or application state that must not change>
+    - <state that must remain unchanged>
+
   assumptions:
-    - <unit, template, document type, or reasonable default>
+    - <necessary executable assumption>
+
   checks:
     - id: AC-1
-      requirement: <user requirement represented by this check>
-      predicate: <falsifiable proposition>
+      requirement: <user requirement>
+      predicate: <true/false proposition>
       method: <SOLIDWORKS_API | FILESYSTEM | TEST | VISUAL | USER>
-      expected: <exact pass condition>
-      evidence: <actual value or artifact to record>
+      expected: <pass condition>
+      evidence: <value or artifact to capture>
 ```
 
-Require every user requirement to map to at least one check. Include checks for both the requested change and protected-state preservation.
+Every material user requirement must map to at least one check.
 
-Prefer deterministic methods in this order:
+Include preservation checks when the task must leave existing content unchanged.
 
-1. SOLIDWORKS API-readable document assertions;
-2. automated tests and filesystem assertions;
-3. reopen-and-read validation of saved output;
-4. visual inspection when geometry intent cannot be asserted through the API;
-5. user judgment only when the criterion is inherently subjective or external.
+Prefer deterministic evidence in this order:
 
-Freeze the contract before implementation. Do not weaken, delete, reinterpret, or replace a pass condition after seeing the result. If the user changes the goal or a check proves objectively impossible to execute, record an `ACCEPTANCE_CHANGE` with the reason and impact. Ask before applying a material change.
+1. SOLIDWORKS API-readable state
+2. automated test
+3. filesystem assertion
+4. save → reopen → read validation
+5. visual inspection
+6. user judgment for inherently subjective criteria
 
-## 3. Use a search-to-action gate
+After implementation begins, do not weaken a failed acceptance condition merely to obtain a pass.
 
-Permit documentation lookup only when tied to:
+# 3. Select one pending check
 
-- one pending or failed acceptance check;
-- one missing API contract required for the next operation; or
-- one concrete compiler, runtime, COM, document-state, or assertion failure.
+Work on one meaningful acceptance slice at a time.
 
-Before each lookup, record:
+Choose:
+
+```text
+smallest useful change
+that can make one pending check pass
+without breaking already-passed checks
+```
+
+Avoid implementing speculative future requirements.
+
+# 4. Get minimum API evidence
+
+Do not browse the knowledge base broadly.
+
+Every lookup must answer one concrete uncertainty blocking the next action.
+
+Before lookup, establish:
 
 ```yaml
 LOOKUP_INTENT:
-  acceptance_id: <AC-N>
-  missing_contract_or_error: <one exact uncertainty or observed failure>
-  exact_query: <symbol, enum, HRESULT, or narrow phrase>
-  evidence_needed: <signature, parameter, return value, enum, remark, or example>
-  stop_condition: <what finding ends this lookup>
+  acceptance_id: AC-N
+  uncertainty: <exact missing API contract or observed error>
+  query: <symbol / enum / HRESULT / narrow phrase>
+  evidence_needed: <signature / parameter / return / enum / remark>
+  stop_when: <finding that permits the next action>
 ```
 
-Apply these transition rules:
+Stop searching as soon as the needed contract is known.
 
-- Search only for information required by the current `LOOKUP_INTENT`.
-- Do not survey neighboring API categories or collect documentation for later feature slices.
-- Stop lookup immediately when its `stop_condition` is satisfied.
-- Make the next material action `IMPLEMENT` or `RUN` after the required contract is confirmed.
-- Permit another lookup for the same acceptance check only after new compiler, runtime, COM, or assertion evidence exists.
-- Never treat additional documentation reading as progress or completion evidence.
-- If the required contract cannot be found through focused lookup, stop with `API_DOCUMENTATION_NOT_FOUND` and include the queries performed.
+## Local SWAPI lookup order
 
-## 4. Consult SWAPI efficiently
+Use the bundled knowledge base directly.
 
-For the current `LOOKUP_INTENT`:
+### Step 1 — exact symbol
 
-1. Search `solidworks-api-kb/llm_index/symbols.tsv` for the exact symbol or narrow substring.
-2. Search `solidworks-api-kb/llm_index/interface_members.jsonl` when an interface member is unknown.
-3. Use `solidworks-api-kb/llm_index/documents.tsv` to resolve the relevant full document.
-4. Open only the directly relevant file under `solidworks-api-kb/markdown/`.
-5. Confirm the SOLIDWORKS 2024 C# signature, parameter meaning, units, return value, enum values, remarks, and prerequisites required by the next action.
-6. Search an example only when the primary contract leaves one implementation ambiguity.
+Search:
 
-Typical focused searches:
+```text
+<KB_ROOT>/llm_index/symbols.tsv
+```
+
+Example:
 
 ```powershell
-rg -n -F "IModelDoc2.OpenDoc6" <solidworks-api-kb>\llm_index\symbols.tsv
-rg -n '"interface": "IModelDoc2"' <solidworks-api-kb>\llm_index\interface_members.jsonl
-rg -n -F "swDocumentTypes_e" <solidworks-api-kb>\llm_index\symbols.tsv
+rg -n -F "IModelDoc2.Save" "<KB_ROOT>\llm_index\symbols.tsv"
 ```
 
-Replace `<solidworks-api-kb>` with the resolved reference path and quote paths containing spaces.
+### Step 2 — interface members
 
-Record the minimum evidence that made the action legal:
+If the member name is unknown, search:
+
+```text
+<KB_ROOT>/llm_index/interface_members.jsonl
+```
+
+Example:
+
+```powershell
+rg -n '"interface": "IModelDoc2"' "<KB_ROOT>\llm_index\interface_members.jsonl"
+```
+
+### Step 3 — resolve documentation
+
+Use:
+
+```text
+<KB_ROOT>/llm_index/documents.tsv
+```
+
+to locate the relevant primary document.
+
+### Step 4 — read primary documentation
+
+Open only the directly relevant document under:
+
+```text
+<KB_ROOT>/markdown/
+```
+
+Confirm only what is required for the next action:
+
+- C# signature;
+- parameter order and meaning;
+- units;
+- return value;
+- error/status semantics;
+- enum values;
+- prerequisites;
+- important remarks.
+
+### Step 5 — examples only when necessary
+
+Search examples only when the primary API contract leaves a concrete implementation ambiguity.
+
+Do not continue reading documentation merely because related material exists.
+
+Record:
 
 ```yaml
 API_EVIDENCE:
-  acceptance_id: <AC-N>
+  acceptance_id: AC-N
   symbol: <interface.member or enum>
-  index_match: <index location>
-  documentation_path: <opened primary document>
-  confirmed_contract: <signature and relevant semantics>
+  index_match: <local index location>
+  documentation: <local markdown path>
+  confirmed_contract: <fact needed for implementation>
   api_version: SOLIDWORKS 2024
   uncertainty: none | <remaining uncertainty>
 ```
 
-## 5. Implement one acceptance-driven slice
+If focused lookup cannot find the required contract, return:
 
-Choose the smallest code change capable of making one pending acceptance check pass while preserving all previously passed checks.
+```text
+API_DOCUMENTATION_NOT_FOUND
+```
 
-- Use named arguments for calls with many or easily confused parameters.
-- Use documented parameter order, types, enum values, and prerequisites.
-- Cast enums explicitly when the COM signature requires integers.
-- Treat SOLIDWORKS API linear units as meters unless the checked documentation says otherwise; include units in variable names.
-- Check the active document and required document type before document-specific operations.
-- Check every returned COM object for `null`.
-- Check boolean, integer status, and error return values.
-- Prefer document-derived or user-preference template paths over machine-specific hardcoded paths.
-- Use a working copy unless the user explicitly authorizes changing the original.
-- Preserve unrelated documents, configurations, features, selections, and application state.
-- Put cleanup in `finally`. Release only COM references owned by the program. Close SOLIDWORKS only when the program launched it and closure is authorized.
-- Do not add sample-specific conditionals or bypasses merely to pass one check.
+with the queries attempted.
 
-## 6. Run and assert in SOLIDWORKS
+# 5. Implement the smallest slice
 
-Compilation is necessary but insufficient. After each executable slice:
+Implement only enough to satisfy the selected acceptance check.
 
-1. Run relevant automated tests.
-2. Run the application against SOLIDWORKS 2024, normally with `dotnet run --project <project.csproj>` for an SDK-style executable project.
-3. Evaluate the targeted acceptance check through its declared method.
-4. Rerun previously passed checks that the change could affect.
-5. Verify required output files exist and can be reopened when applicable.
-6. Use the exact failed check, actual value, exception, HRESULT, or document state as the next feedback signal.
-7. Rerun the full relevant test and acceptance suite after the final code change.
+For SOLIDWORKS COM code:
 
-Record actual evidence, not narrative confidence:
+- use documented parameter order and types;
+- use explicit enum conversions when COM requires integers;
+- treat API linear units as meters unless documentation says otherwise;
+- include units in variable names when ambiguity is possible;
+- validate active document and document type before document-specific actions;
+- check returned COM objects for `null`;
+- inspect boolean, integer status, error code, and HRESULT results where applicable;
+- avoid machine-specific template or file paths when document-derived or user-provided paths exist;
+- prefer working copies unless modification of the original is explicitly intended;
+- preserve unrelated features, configurations, selections, documents, and application state;
+- clean up owned resources in `finally`;
+- close SOLIDWORKS only if this program launched it and closing it is allowed.
+
+Do not add sample-specific conditionals merely to make one test pass.
+
+Do not refactor unrelated code during an acceptance slice.
+
+# 6. Run against real SOLIDWORKS
+
+Compilation is necessary but not sufficient.
+
+After each executable slice:
+
+1. run relevant automated tests;
+2. compile the project;
+3. run the program against SOLIDWORKS 2024;
+4. evaluate the selected acceptance check;
+5. rerun previously passed checks affected by the change;
+6. verify output files when applicable;
+7. save and reopen output when persistence matters.
+
+Typical executable project:
+
+```powershell
+dotnet run --project <project.csproj>
+```
+
+Use actual runtime behavior as the feedback signal.
+
+Record:
 
 ```yaml
 RUN_EVIDENCE:
-  command: <exact command>
+  command: <command executed>
   exit_code: <integer>
   solidworks_version: <observed version>
-  input_document: <path>
-  output_document: <path>
+
   checks:
     - id: AC-1
-      expected: <frozen expected value>
-      actual: <observed value>
+      expected: <frozen expectation>
+      actual: <observed result>
       passed: true | false
-      evidence: <API result, test output, file, or visual artifact>
+      evidence: <API value / test / file / visual evidence>
+
   protected_state:
     passed: true | false
-    evidence: <observed preservation result>
-  cleanup_result: <result>
+    evidence: <observed result>
 ```
 
-## 7. Correct from failed evidence
+# 7. Learn from failure
 
-When a check fails:
+A failed run is evidence.
 
-1. Preserve its exact expected value, actual value, error, HRESULT, selection state, and document type.
-2. Form one testable hypothesis tied to that check.
-3. If an API uncertainty blocks the next action, create one new `LOOKUP_INTENT` from the observed evidence.
-4. Change one relevant assumption or code path.
-5. Run the same check again.
-6. Do not expand into unrelated API research.
+Do not immediately broaden the search or rewrite large parts of the implementation.
 
-Do not repeatedly edit or search without producing new run evidence.
+For a failed check:
 
-## 8. Terminate and report
+```text
+observe exact failure
+      ↓
+assign failure to one layer
+      ↓
+form one testable hypothesis
+      ↓
+obtain API evidence only if required
+      ↓
+change the smallest relevant thing
+      ↓
+rerun the same check
+```
 
-Report `SUCCESS` only when:
+Classify the failure when useful:
+
+```text
+REQUIREMENT
+API_CONTRACT
+CODE
+COM_RUNTIME
+DOCUMENT_STATE
+SOLIDWORKS_STATE
+FILESYSTEM
+ASSERTION
+ENVIRONMENT
+```
+
+Preserve:
+
+- expected value;
+- actual value;
+- exception;
+- HRESULT;
+- document type;
+- relevant selection/configuration state.
+
+A new documentation lookup is justified only when new evidence creates a concrete API uncertainty.
+
+Do not alternate between searching and editing without producing new runtime evidence.
+
+# 8. Finish only on evidence
+
+Return `SUCCESS` only when:
 
 ```text
 all frozen acceptance checks pass
-AND protected-state checks pass
-AND the real SOLIDWORKS run completes successfully
-AND required output files exist and reopen when applicable
-AND relevant tests pass
-AND core API evidence is recorded
+AND
+protected-state checks pass
+AND
+the relevant real SOLIDWORKS execution succeeds
+AND
+required output artifacts exist
+AND
+saved artifacts reopen successfully when applicable
+AND
+relevant tests pass
 ```
 
-Report `BLOCKED` only with:
+If SOLIDWORKS cannot be launched, COM automation cannot execute, or a required license/capability is unavailable, return:
+
+```text
+RUNTIME_VERIFICATION_BLOCKED
+```
+
+Do not claim functional success based only on compilation or code inspection.
+
+For other blockers report:
 
 ```yaml
 BLOCKED:
-  acceptance_id: <failed or pending AC-N>
+  acceptance_id: <AC-N>
   blocker: <observable blocker>
   evidence: <exact error or state>
-  attempted_action: <last legal action>
-  required_input_or_capability: <what would unblock execution>
+  last_action: <last useful action attempted>
+  required_to_continue: <missing input or capability>
 ```
 
-Use `RUNTIME_VERIFICATION_BLOCKED` when SOLIDWORKS cannot be launched or accessed, its license is unavailable, or desktop COM execution is unavailable. Never claim functional success without a real run.
+# Final report
 
-Deliver:
+Keep the final report concise.
 
-- the frozen acceptance contract;
-- changed code and output artifact paths;
-- API evidence for core calls;
-- run evidence with expected and actual values;
-- remaining assumptions, failures, or blockers.
+Include:
+
+```yaml
+RESULT: SUCCESS | BLOCKED
+
+GOAL:
+  <requested outcome>
+
+CHANGES:
+  - <important changed file or artifact>
+
+ACCEPTANCE:
+  - id: AC-1
+    passed: true | false
+    evidence: <observable evidence>
+
+API_EVIDENCE:
+  - <core API contract used>
+
+RUN:
+  command: <final command>
+  result: <observed result>
+
+OUTPUT:
+  - <artifact path>
+
+REMAINING:
+  - <only unresolved assumption or blocker>
+```
+
+The deliverable is the verified engineering result, not the amount of documentation read or code produced.
